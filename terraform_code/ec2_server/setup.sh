@@ -1,69 +1,89 @@
 #!/bin/bash
 
-# Install AWS CLI
-sudo apt install unzip -y
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip awscliv2.zip
-sudo ./aws/install
+set -e
 
-# Install Docker
-# Add Docker's official GPG key:
-sudo apt-get update -y
-sudo apt-get install -y ca-certificates curl
+export DEBIAN_FRONTEND=noninteractive
+
+sudo apt update -y
+sudo apt upgrade -y
+
+sudo apt install -y \
+  curl \
+  wget \
+  unzip \
+  gnupg \
+  software-properties-common \
+  apt-transport-https \
+  ca-certificates
+
+sudo apt install prometheus -y
+sudo systemctl enable prometheus
+sudo systemctl start prometheus
+
+wget -q -O - https://apt.grafana.com/gpg.key | \
+  gpg --dearmor | \
+  sudo tee /usr/share/keyrings/grafana.gpg > /dev/null
+
+echo "deb [signed-by=/usr/share/keyrings/grafana.gpg] https://apt.grafana.com stable main" | \
+  sudo tee /etc/apt/sources.list.d/grafana.list > /dev/null
+
+sudo apt update -y
+sudo apt install grafana -y
+sudo systemctl daemon-reload
+sudo systemctl enable grafana-server
+sudo systemctl start grafana-server
+
 sudo install -m 0755 -d /etc/apt/keyrings
-# timeout 60 
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-# Add the repository to Apt sources:
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update -y
-sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y
-sudo usermod -aG docker ubuntu
-sudo chmod 777 /var/run/docker.sock
-# sudo newgrp docker
-docker --version
 
-# Install Sonarqube (as image)
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+  sudo gpg --dearmor -o /usr/share/keyrings/docker.gpg
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt update -y
+sudo apt install docker-ce docker-ce-cli containerd.io -y
+sudo systemctl enable docker
+sudo systemctl start docker
+
+sudo usermod -aG docker ubuntu
+sudo chmod 666 /var/run/docker.sock
+
 docker run -d --name sonar -p 9000:9000 sonarqube:lts-community
 
-# Install Trivy
-sudo apt-get install -y wget apt-transport-https gnupg
-wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
-echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
-sudo apt-get update -y
-sudo apt-get install trivy -y
+wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | \
+  gpg --dearmor | \
+  sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
 
-# Install Java 17
-# REF: https://www.rosehosting.com/blog/how-to-install-java-17-lts-on-ubuntu-20-04/
+echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] \
+  https://aquasecurity.github.io/trivy-repo/deb generic main" | \
+  sudo tee /etc/apt/sources.list.d/trivy.list > /dev/null
+
 sudo apt update -y
-sudo apt install openjdk-17-jdk openjdk-17-jre -y
-java -version
+sudo apt install trivy -y
 
-# Install Jenkins
-# REF: https://www.jenkins.io/doc/book/installing/linux/#debianubuntu
+sudo apt install -y fontconfig openjdk-17-jre
 
-sudo wget -O /usr/share/keyrings/jenkins-keyring.asc https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
-echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc]" https://pkg.jenkins.io/debian-stable binary/ | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | \
+  sudo gpg --dearmor -o /usr/share/keyrings/jenkins-keyring.gpg
 
-sudo apt update -y                                   # to update package
-sudo apt install jenkins -y                          # to install jenkins
+echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.gpg] \
+  https://pkg.jenkins.io/debian-stable binary/" | \
+  sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
 
-sudo systemctl start jenkins                         # to start jenkins service
-# sudo systemctl status jenkins                        # to check the status if jenkins is running or not
+sudo apt update -y
+sudo apt install jenkins -y
+sudo systemctl enable jenkins
+sudo systemctl start jenkins
 
-# Get Jenkins_Public_IP
-ip=$(curl ifconfig.me)
-port1=8080
-port2=9000
+IP=$(curl -s ifconfig.me)
 
-# Generate Jenkins initial login password
-pass=$(sudo cat /var/lib/jenkins/secrets/initialAdminPassword)
-
-echo "Access Jenkins Server here --> http://$ip:$port1"
-echo "Jenkins Initial Password: $pass"
-echo
-echo "Access SonarQube Server here --> http://$ip:$port2"
-echo "SonarQube Username & Password: admin"
+echo "==================================="
+echo "SonarQube  : http://$IP:9000"
+echo "Grafana    : http://$IP:3000"
+echo "Prometheus : http://$IP:9090"
+echo "Jenkins    : http://$IP:8080"
+echo "==================================="
